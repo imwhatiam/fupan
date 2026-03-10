@@ -115,7 +115,7 @@ def init(request):
     if not is_hol:
         # Today is a trading day.
         now = datetime.now()
-        if now.hour >= 17:
+        if now.hour >= 18:
             if db_service.has_date(today):
                 date = today
                 is_today = True
@@ -137,18 +137,18 @@ def init(request):
                 hint = "Preparing…"
         else:
             date = today
-            hint = "Data updates at 17:00 on trading days"
+            hint = "Data updates at 18:00 on trading days"
     else:
         # Today is a weekend or public holiday.
         if available:
             date = available[0]
             hint = (
                 f"{hol_reason}. Showing the most recent trading day {date}. "
-                f"Data updates at 17:00 on trading days."
+                f"Data updates at 18:00 on trading days."
             )
         else:
             date = today
-            hint = "No data yet. Data updates at 17:00 on trading days."
+            hint = "No data yet. Data updates at 18:00 on trading days."
 
     return Response(
         {
@@ -173,8 +173,8 @@ def fupan(request):
     Results are cached for 12 hours per date.
     """
     now = datetime.now()
-    if now.hour < 17:
-        hint = "No data yet. Data updates at 17:00 on trading days."
+    if now.hour < 18:
+        hint = "No data yet. Data updates at 18:00 on trading days."
         return Response(
             {"hint": hint}, status=404
         )
@@ -212,8 +212,8 @@ def industry(request):
     Results are cached for 12 hours per date.
     """
     now = datetime.now()
-    if now.hour < 17:
-        hint = "No data yet. Data updates at 17:00 on trading days."
+    if now.hour < 18:
+        hint = "No data yet. Data updates at 18:00 on trading days."
         return Response(
             {"hint": hint}, status=404
         )
@@ -255,8 +255,8 @@ def hundred_day(request):
     Results are cached for 12 hours per date.
     """
     now = datetime.now()
-    if now.hour < 17:
-        hint = "No data yet. Data updates at 17:00 on trading days."
+    if now.hour < 18:
+        hint = "No data yet. Data updates at 18:00 on trading days."
         return Response(
             {"hint": hint}, status=404
         )
