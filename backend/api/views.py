@@ -26,6 +26,7 @@ from rest_framework.response import Response
 
 from .services import data_service, analysis_service
 from .services import db_service
+from .services import hundred_day_service
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -113,43 +114,41 @@ def init(request):
 
     if not is_hol:
         # Today is a trading day.
-        if db_service.has_date(today):
-            date = today
-            is_today = True
-            hint = "Today's data loaded."
-        else:
-            # Trigger a one-shot background download (deduplicated by lock).
-            with _DOWNLOAD_LOCK:
-                already = today in _DOWNLOAD_IN_PROGRESS
-            if not already:
-                t = threading.Thread(
-                    target=_do_download_and_save,
-                    args=(today,),
-                    daemon=True,
-                )
-                t.start()
-
-            if available:
-                date = available[0]
-                hint = (
-                    f"Today's data is being downloaded. "
-                    f"Showing {date} for now. "
-                    f"Data updates at 18:00 on trading days."
-                )
-            else:
+        now = datetime.now()
+        if now.hour >= 17:
+            if db_service.has_date(today):
                 date = today
-                hint = "Data updates at 18:00 on trading days. Preparing…"
+                is_today = True
+                hint = "Today's data loaded."
+            else:
+                # Trigger a one-shot background download (deduplicated by lock).
+                with _DOWNLOAD_LOCK:
+                    already = today in _DOWNLOAD_IN_PROGRESS
+                if not already:
+                    t = threading.Thread(
+                        target=_do_download_and_save,
+                        args=(today,),
+                        daemon=True,
+                    )
+                    t.start()
+
+                date = today
+                is_today = True
+                hint = "Preparing…"
+        else:
+            date = today
+            hint = "Data updates at 17:00 on trading days"
     else:
         # Today is a weekend or public holiday.
         if available:
             date = available[0]
             hint = (
                 f"{hol_reason}. Showing the most recent trading day {date}. "
-                f"Data updates at 18:00 on trading days."
+                f"Data updates at 17:00 on trading days."
             )
         else:
             date = today
-            hint = "No data yet. Data updates at 18:00 on trading days."
+            hint = "No data yet. Data updates at 17:00 on trading days."
 
     return Response(
         {
@@ -173,6 +172,13 @@ def fupan(request):
     trading volume exceeds 800 million CNY, split by exchange and direction.
     Results are cached for 12 hours per date.
     """
+    now = datetime.now()
+    if now.hour < 17:
+        hint = "No data yet. Data updates at 17:00 on trading days."
+        return Response(
+            {"hint": hint}, status=404
+        )
+
     date_str = request.query_params.get(
         "date", data_service.get_current_date_str()
     )
@@ -205,6 +211,13 @@ def industry(request):
     of all stocks by gain) plus matplotlib bar charts encoded as base-64 PNG.
     Results are cached for 12 hours per date.
     """
+    now = datetime.now()
+    if now.hour < 17:
+        hint = "No data yet. Data updates at 17:00 on trading days."
+        return Response(
+            {"hint": hint}, status=404
+        )
+
     date_str = request.query_params.get(
         "date", data_service.get_current_date_str()
     )
@@ -241,7 +254,12 @@ def hundred_day(request):
 
     Results are cached for 12 hours per date.
     """
-    from .services import hundred_day_service
+    now = datetime.now()
+    if now.hour < 17:
+        hint = "No data yet. Data updates at 17:00 on trading days."
+        return Response(
+            {"hint": hint}, status=404
+        )
 
     date_str = request.query_params.get(
         "date", data_service.get_current_date_str()
