@@ -342,8 +342,12 @@ def _generate_ratio_chart(
         low_ratios.append(-low_count / total * 100)
 
     # Font setup for Chinese labels on macOS / Linux
+    # plt.rcParams["font.sans-serif"] = [
+    #     "PingFang SC", "Heiti TC", "Arial Unicode MS", "SimHei", "DejaVu Sans"
+    # ]
+    # plt.rcParams["axes.unicode_minus"] = False
     plt.rcParams["font.sans-serif"] = [
-        "PingFang SC", "Heiti TC", "Arial Unicode MS", "SimHei", "DejaVu Sans"
+        "WenQuanYi Micro Hei", "PingFang SC", "SimHei", "DejaVu Sans"
     ]
     plt.rcParams["axes.unicode_minus"] = False
 

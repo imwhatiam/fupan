@@ -79,7 +79,10 @@ def _industry_summary(df, total_amount, top_n=10):
 
 
 def _generate_chart_base64(summary_list, title):
-    plt.rcParams['font.sans-serif'] = ['PingFang SC', 'Heiti TC', 'Arial Unicode MS', 'SimHei', 'DejaVu Sans']
+    # plt.rcParams['font.sans-serif'] = ['PingFang SC', 'Heiti TC', 'Arial Unicode MS', 'SimHei', 'DejaVu Sans']
+    # plt.rcParams['axes.unicode_minus'] = False
+
+    plt.rcParams['font.sans-serif'] = ['WenQuanYi Micro Hei', 'SimHei', 'DejaVu Sans']
     plt.rcParams['axes.unicode_minus'] = False
 
     industries   = [r['industry']             for r in summary_list]
