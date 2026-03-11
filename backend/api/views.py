@@ -172,16 +172,15 @@ def fupan(request):
     trading volume exceeds 800 million CNY, split by exchange and direction.
     Results are cached for 12 hours per date.
     """
+    today = data_service.get_current_date_str()
+    date_str = request.query_params.get("date", today)
     now = datetime.now()
-    if now.hour < 18:
+    if now.hour < 18 and date_str == today:
         hint = "No data yet. Data updates at 18:00 on trading days."
         return Response(
             {"hint": hint}, status=404
         )
 
-    date_str = request.query_params.get(
-        "date", data_service.get_current_date_str()
-    )
     cache_key = f"fupan:{date_str}"
     cached = cache.get(cache_key)
     if cached is not None:
@@ -211,16 +210,15 @@ def industry(request):
     of all stocks by gain) plus matplotlib bar charts encoded as base-64 PNG.
     Results are cached for 12 hours per date.
     """
+    today = data_service.get_current_date_str()
+    date_str = request.query_params.get("date", today)
     now = datetime.now()
-    if now.hour < 18:
+    if now.hour < 18 and date_str == today:
         hint = "No data yet. Data updates at 18:00 on trading days."
         return Response(
             {"hint": hint}, status=404
         )
 
-    date_str = request.query_params.get(
-        "date", data_service.get_current_date_str()
-    )
     cache_key = f"industry:{date_str}"
     cached = cache.get(cache_key)
     if cached is not None:
@@ -254,16 +252,14 @@ def hundred_day(request):
 
     Results are cached for 12 hours per date.
     """
+    today = data_service.get_current_date_str()
+    date_str = request.query_params.get("date", today)
     now = datetime.now()
-    if now.hour < 18:
+    if now.hour < 18 and date_str == today:
         hint = "No data yet. Data updates at 18:00 on trading days."
         return Response(
             {"hint": hint}, status=404
         )
-
-    date_str = request.query_params.get(
-        "date", data_service.get_current_date_str()
-    )
     cache_key = f"hundred_day:{date_str}"
     cached = cache.get(cache_key)
     if cached is not None:
