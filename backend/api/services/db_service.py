@@ -10,8 +10,16 @@ Responsibilities:
   - Provide query helpers used by the analysis services.
 
 Database file path is configured via ``settings.TRADE_DB_PATH``.
+
+Industry data source priority (checked in save_to_db):
+  1. 沪深京A股.csv  – uploaded manually to STOCK_DATA_DIR; columns "代码" and
+     "所属行业" are used.  Stock codes in this file are prefixed with a leading
+     apostrophe (e.g. ``'301683``); only the last six digits are kept.
+  2. baostock CSV   – downloaded automatically via data_service when the
+     上-file is absent.
 """
 
+import os
 import sqlite3
 
 import pandas as pd
@@ -25,6 +33,53 @@ from .data_service import (
     download_sse_stock_data,
     download_szse_stock_data,
 )
+
+# ---------------------------------------------------------------------------
+# Constants
+# ---------------------------------------------------------------------------
+
+# Filename of the manually uploaded A-share list (placed in STOCK_DATA_DIR).
+_HUSHEN_CSV = "沪深京A股.csv"
+
+
+# ---------------------------------------------------------------------------
+# Industry data helper
+# ---------------------------------------------------------------------------
+
+def _get_industry_df(date_str: str) -> pd.DataFrame:
+    """Return a DataFrame with columns [code, industry] for merging.
+
+    Checks for a manually uploaded ``沪深京A股.csv`` in STOCK_DATA_DIR first.
+    If found, extracts the "代码" and "所属行业" columns and normalises the
+    code values (strips the leading apostrophe and keeps the last 6 digits).
+
+    Falls back to the baostock-sourced industry CSV when the file is absent.
+
+    Args:
+        date_str: Trading date string; passed to the baostock fallback path.
+
+    Returns:
+        DataFrame with exactly two columns: ``code`` (str) and ``industry`` (str).
+    """
+    hushen_path = os.path.join(settings.STOCK_DATA_DIR, _HUSHEN_CSV)
+
+    if os.path.exists(hushen_path):
+        df = pd.read_csv(hushen_path, dtype=str)
+
+        # Normalise code: values look like "'301683" – keep the last 6 digits.
+        df["code"] = (
+            df["代码"]
+            .str.strip()
+            .str.replace("'", "", regex=False)   # strip leading apostrophe
+            .str[-6:]                              # keep last 6 digits
+            .str.zfill(6)                          # zero-pad just in case
+        )
+        df["industry"] = df["所属行业"].str.strip()
+        return df[["code", "industry"]].copy()
+
+    # Fallback: baostock-sourced CSV (downloaded automatically).
+    return read_stock_industry_data(date_str)
+
 
 # ---------------------------------------------------------------------------
 # DDL
@@ -100,7 +155,9 @@ def save_to_db(date_str: str) -> int:
     download_szse_stock_data(date_str)
 
     # Read and merge industry classification.
-    industry_df = read_stock_industry_data(date_str)
+    # Prefers 沪深京A股.csv if present in STOCK_DATA_DIR; otherwise falls
+    # back to the baostock-sourced CSV (downloaded above).
+    industry_df = _get_industry_df(date_str)
     sse_df = read_sse_stock_data(date_str).merge(
         industry_df, on="code", how="left"
     )

@@ -16,6 +16,7 @@ backend/staticfiles/
 # ─── Trade database & raw data (generated at runtime) ────────────────────────
 backend/stock_trade_info.sqlite3
 backend/stock_data/
+fupan-utils/stock_data/
 
 # ─── Environment variables ────────────────────────────────────────────────────
 .env

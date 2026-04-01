@@ -5,6 +5,7 @@ Django REST Framework API views for the daily market review system.
 
 Endpoints:
   POST /api/init/          – Page initialisation; resolves starting date.
+  POST /api/upload/        – Upload a CSV file to the stock_data directory.
   GET  /api/fupan/         – Daily review table (large movers).
   GET  /api/industry/      – Sector analysis with charts.
   GET  /api/hundred-day/   – 100-day new high / new low analysis.
@@ -26,6 +27,7 @@ from rest_framework.response import Response
 
 from .services import data_service, analysis_service
 from .services import db_service
+from .services import hundred_day_service
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -75,6 +77,64 @@ def _do_download_and_save(date_str: str) -> None:
 
 
 # ---------------------------------------------------------------------------
+# File upload
+# ---------------------------------------------------------------------------
+
+@api_view(["POST"])
+def upload(request):
+    """POST /api/upload/ – Upload a CSV file to the stock_data directory.
+
+    Accepts a single file in the ``file`` field of a multipart/form-data
+    request.  Only ``.csv`` files are accepted.  The file is saved as-is
+    under ``settings.STOCK_DATA_DIR`` using its original filename.
+
+    On success, returns::
+
+        {"filename": "<saved filename>", "path": "<absolute path>", "size": <bytes>}
+
+    On error (no file / wrong type / write failure), returns a 4xx/5xx
+    response with an ``error`` key.
+
+    Special case – ``沪深京A股.csv``:
+        When this filename is uploaded it replaces the baostock-sourced
+        industry classification used by ``save_to_db()``.  All analysis
+        cache entries are cleared so the next query picks up the new data.
+    """
+    file_obj = request.FILES.get("file")
+    if not file_obj:
+        return Response({"error": "No file provided. Use field name 'file'."}, status=400)
+
+    if not file_obj.name.endswith(".csv"):
+        return Response(
+            {"error": f"Only .csv files are accepted, got: {file_obj.name}"},
+            status=400,
+        )
+
+    dest_path = os.path.join(settings.STOCK_DATA_DIR, file_obj.name)
+
+    try:
+        with open(dest_path, "wb") as f:
+            for chunk in file_obj.chunks():
+                f.write(chunk)
+    except OSError as exc:
+        return Response({"error": f"Failed to save file: {exc}"}, status=500)
+
+    # When the industry reference file is (re-)uploaded, flush all analysis
+    # caches so subsequent requests re-run the merge with fresh data.
+    if file_obj.name == "沪深京A股.csv":
+        cache.clear()
+
+    return Response(
+        {
+            "filename": file_obj.name,
+            "path": dest_path,
+            "size": file_obj.size,
+        },
+        status=201,
+    )
+
+
+# ---------------------------------------------------------------------------
 # Health check
 # ---------------------------------------------------------------------------
 
@@ -113,32 +173,30 @@ def init(request):
 
     if not is_hol:
         # Today is a trading day.
-        if db_service.has_date(today):
-            date = today
-            is_today = True
-            hint = "Today's data loaded."
-        else:
-            # Trigger a one-shot background download (deduplicated by lock).
-            with _DOWNLOAD_LOCK:
-                already = today in _DOWNLOAD_IN_PROGRESS
-            if not already:
-                t = threading.Thread(
-                    target=_do_download_and_save,
-                    args=(today,),
-                    daemon=True,
-                )
-                t.start()
-
-            if available:
-                date = available[0]
-                hint = (
-                    f"Today's data is being downloaded. "
-                    f"Showing {date} for now. "
-                    f"Data updates at 18:00 on trading days."
-                )
-            else:
+        now = datetime.now()
+        if now.hour >= 18:
+            if db_service.has_date(today):
                 date = today
-                hint = "Data updates at 18:00 on trading days. Preparing…"
+                is_today = True
+                hint = "Today's data loaded."
+            else:
+                # Trigger a one-shot background download (deduplicated by lock).
+                with _DOWNLOAD_LOCK:
+                    already = today in _DOWNLOAD_IN_PROGRESS
+                if not already:
+                    t = threading.Thread(
+                        target=_do_download_and_save,
+                        args=(today,),
+                        daemon=True,
+                    )
+                    t.start()
+
+                date = today
+                is_today = True
+                hint = "Preparing…"
+        else:
+            date = today
+            hint = "Data updates at 18:00 on trading days"
     else:
         # Today is a weekend or public holiday.
         if available:
@@ -173,9 +231,15 @@ def fupan(request):
     trading volume exceeds 800 million CNY, split by exchange and direction.
     Results are cached for 12 hours per date.
     """
-    date_str = request.query_params.get(
-        "date", data_service.get_current_date_str()
-    )
+    today = data_service.get_current_date_str()
+    date_str = request.query_params.get("date", today)
+    now = datetime.now()
+    if now.hour < 18 and date_str == today:
+        hint = "No data yet. Data updates at 18:00 on trading days."
+        return Response(
+            {"hint": hint}, status=404
+        )
+
     cache_key = f"fupan:{date_str}"
     cached = cache.get(cache_key)
     if cached is not None:
@@ -205,9 +269,15 @@ def industry(request):
     of all stocks by gain) plus matplotlib bar charts encoded as base-64 PNG.
     Results are cached for 12 hours per date.
     """
-    date_str = request.query_params.get(
-        "date", data_service.get_current_date_str()
-    )
+    today = data_service.get_current_date_str()
+    date_str = request.query_params.get("date", today)
+    now = datetime.now()
+    if now.hour < 18 and date_str == today:
+        hint = "No data yet. Data updates at 18:00 on trading days."
+        return Response(
+            {"hint": hint}, status=404
+        )
+
     cache_key = f"industry:{date_str}"
     cached = cache.get(cache_key)
     if cached is not None:
@@ -241,11 +311,14 @@ def hundred_day(request):
 
     Results are cached for 12 hours per date.
     """
-    from .services import hundred_day_service
-
-    date_str = request.query_params.get(
-        "date", data_service.get_current_date_str()
-    )
+    today = data_service.get_current_date_str()
+    date_str = request.query_params.get("date", today)
+    now = datetime.now()
+    if now.hour < 18 and date_str == today:
+        hint = "No data yet. Data updates at 18:00 on trading days."
+        return Response(
+            {"hint": hint}, status=404
+        )
     cache_key = f"hundred_day:{date_str}"
     cached = cache.get(cache_key)
     if cached is not None:
