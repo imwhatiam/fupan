@@ -64,7 +64,18 @@ def _get_industry_df(date_str: str) -> pd.DataFrame:
     hushen_path = os.path.join(settings.STOCK_DATA_DIR, _HUSHEN_CSV)
 
     if os.path.exists(hushen_path):
-        df = pd.read_csv(hushen_path, dtype=str)
+        # Excel 另存的 CSV 常见 UTF-16 LE（BOM = 0xff 0xfe）或 GBK 编码，
+        # 依次尝试：utf-16、gbk、utf-8，均失败则抛出明确错误。
+        for enc in ("utf-16", "gbk", "utf-8"):
+            try:
+                df = pd.read_csv(hushen_path, dtype=str, encoding=enc)
+                break
+            except (UnicodeDecodeError, Exception):
+                continue
+        else:
+            raise ValueError(
+                f"无法解析 {_HUSHEN_CSV} 的编码，请另存为 UTF-8 格式后重新上传"
+            )
 
         # Normalise code: values look like "'301683" – keep the last 6 digits.
         df["code"] = (
