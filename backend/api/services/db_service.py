@@ -68,7 +68,7 @@ def _get_industry_df(date_str: str) -> pd.DataFrame:
         # 依次尝试：utf-16、gbk、utf-8，均失败则抛出明确错误。
         for enc in ("utf-16", "gbk", "utf-8"):
             try:
-                df = pd.read_csv(hushen_path, dtype=str, encoding=enc)
+                df = pd.read_csv(hushen_path, sep='\t', dtype=str, encoding=enc)
                 break
             except (UnicodeDecodeError, Exception):
                 continue
