@@ -134,6 +134,50 @@ def upload(request):
     )
 
 
+
+# ---------------------------------------------------------------------------
+# Save stock industry JSON
+# ---------------------------------------------------------------------------
+
+@api_view(["POST"])
+def save_stock_industry_json(request):
+    """POST /api/save-stock-industry-json/ – Persist a JSON body to stock_industry.json.
+
+    Accepts any valid JSON object or array in the request body and writes it
+    to ``stock_industry.json`` inside ``settings.STOCK_DATA_DIR``, overwriting
+    any previous content.  The analysis cache is cleared so subsequent queries
+    pick up the updated data.
+
+    Returns::
+
+        {"path": "<absolute path>", "bytes": <written bytes>}
+    """
+    import json as _json
+
+    body = request.data
+    if not isinstance(body, (dict, list)):
+        return Response(
+            {"error": "Request body must be a JSON object or array."},
+            status=400,
+        )
+
+    dest_path = os.path.join(settings.STOCK_DATA_DIR, "stock_industry.json")
+
+    try:
+        payload = _json.dumps(body, ensure_ascii=False, indent=2)
+        with open(dest_path, "w", encoding="utf-8") as f:
+            f.write(payload)
+    except OSError as exc:
+        return Response({"error": f"Failed to write file: {exc}"}, status=500)
+
+    cache.clear()
+
+    return Response(
+        {"path": dest_path, "bytes": len(payload.encode())},
+        status=201,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Health check
 # ---------------------------------------------------------------------------
