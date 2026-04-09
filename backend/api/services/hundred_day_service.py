@@ -197,10 +197,10 @@ def get_hundred_day_analysis(date_str: str) -> dict:
     # 1. Sector table for the target date
     # ------------------------------------------------------------------
     target_highs = _build_sector_table(
-        new_high_df, date_str, industry_map, name_map, ascending=False
+        new_high_df, date_str, industry_map, name_map
     )
     target_lows = _build_sector_table(
-        new_low_df, date_str, industry_map, name_map, ascending=True
+        new_low_df, date_str, industry_map, name_map
     )
 
     # Total stocks with close price on the target date
@@ -234,7 +234,6 @@ def _build_sector_table(
     date_str: str,
     industry_map: pd.Series,
     name_map: pd.Series,
-    ascending: bool,
 ) -> list:
     """Build a list of sector dicts for the given boolean flag DataFrame.
 
@@ -243,7 +242,6 @@ def _build_sector_table(
         date_str:     Target date string.
         industry_map: Series mapping code -> industry.
         name_map:     Series mapping code -> stock name.
-        ascending:    If True, sort sectors by count ascending (new-low order).
 
     Returns:
         List of dicts, each representing one sector, sorted and limited to
@@ -275,7 +273,7 @@ def _build_sector_table(
     sorted_sectors = sorted(
         sector_count.items(),
         key=lambda x: x[1],
-        reverse=(not ascending),
+        reverse=True,
     )[:_TOP_N_INDUSTRIES]
 
     result = []

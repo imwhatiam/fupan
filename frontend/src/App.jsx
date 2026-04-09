@@ -316,9 +316,9 @@ export default function App() {
                 chartB64={industryData.above_5pct?.chart_b64}
               />
               <IndustryChart
-                title="全市场涨幅 Top 10% — 行业分布（Top 10）"
-                summary={industryData.top_10pct?.summary}
-                chartB64={industryData.top_10pct?.chart_b64}
+                title="全市场涨幅 Top 5% — 行业分布（Top 10）"
+                summary={industryData.top_5pct?.summary}
+                chartB64={industryData.top_5pct?.chart_b64}
               />
             </>
           )}

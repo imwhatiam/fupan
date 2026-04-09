@@ -6,10 +6,9 @@ import base64
 import numpy as np
 import pandas as pd
 import matplotlib
-matplotlib.use('Agg')
 import matplotlib.pyplot as plt
-
 from .db_service import get_trade_df
+matplotlib.use('Agg')
 
 
 # ─────────────────────────────────────────────
@@ -85,16 +84,16 @@ def _generate_chart_base64(summary_list, title):
     plt.rcParams['font.sans-serif'] = ['WenQuanYi Micro Hei', 'SimHei', 'DejaVu Sans']
     plt.rcParams['axes.unicode_minus'] = False
 
-    industries   = [r['industry']             for r in summary_list]
-    stock_counts = [r['stock_count']           for r in summary_list]
-    avg_pct_chgs = [r['avg_pctChg']            for r in summary_list]
-    ratios       = [r['industry_amount_ratio'] for r in summary_list]
+    industries = [r['industry'] for r in summary_list]
+    stock_counts = [r['stock_count'] for r in summary_list]
+    avg_pct_chgs = [r['avg_pctChg'] for r in summary_list]
+    ratios = [r['industry_amount_ratio'] for r in summary_list]
 
     x = np.arange(len(industries))
     width = 0.25
 
     count_norm = [v / 100 for v in stock_counts]
-    pct_norm   = [v / 10  for v in avg_pct_chgs]
+    pct_norm = [v / 10 for v in avg_pct_chgs]
 
     fig, ax = plt.subplots(figsize=(14, 6))
     b1 = ax.bar(x - width, count_norm, width, label='stock_count/100')
@@ -134,11 +133,11 @@ def get_fupan_data(date_str):
     df = get_trade_df(date_str)
 
     # 区分上证（代码 6 开头）和深证
-    sse_df  = df[df['code'].str.startswith('6')].copy()
+    sse_df = df[df['code'].str.startswith('6')].copy()
     szse_df = df[~df['code'].str.startswith('6')].copy()
 
-    sse_rise  = _filter_stocks(sse_df,  'rise')
-    sse_fall  = _filter_stocks(sse_df,  'fall')
+    sse_rise = _filter_stocks(sse_df, 'rise')
+    sse_fall = _filter_stocks(sse_df, 'fall')
     szse_rise = _filter_stocks(szse_df, 'rise')
     szse_fall = _filter_stocks(szse_df, 'fall')
 
@@ -159,16 +158,16 @@ def get_fupan_data(date_str):
 
 
 def get_industry_analysis(date_str):
-    """行业分析：涨幅>5% 与 Top 10%，含柱状图 base64"""
+    """行业分析：涨幅>5% 与 Top 5%，含柱状图 base64"""
     df = get_trade_df(date_str)
     total_amount = float(df['amount'].sum())
 
-    all_sorted   = df.sort_values('pctChg', ascending=False)
-    above_5pct   = all_sorted[all_sorted['pctChg'] > 5.0]
-    top_10pct    = all_sorted.head(max(1, int(len(all_sorted) * 0.1)))
+    all_sorted = df.sort_values('pctChg', ascending=False)
+    above_5pct = all_sorted[all_sorted['pctChg'] > 5.0]
+    top_5pct = all_sorted.head(max(1, int(len(all_sorted) * 0.05)))
 
     above_5pct_summary = _industry_summary(above_5pct, total_amount)
-    top_10pct_summary  = _industry_summary(top_10pct,  total_amount)
+    top_5pct_summary = _industry_summary(top_5pct,  total_amount)
 
     return {
         'date': date_str,
@@ -177,8 +176,8 @@ def get_industry_analysis(date_str):
             'summary':   above_5pct_summary,
             'chart_b64': _generate_chart_base64(above_5pct_summary, '涨幅超过5%行业分布'),
         },
-        'top_10pct': {
-            'summary':   top_10pct_summary,
-            'chart_b64': _generate_chart_base64(top_10pct_summary, 'Top 10%涨幅行业分布'),
+        'top_5pct': {
+            'summary':   top_5pct_summary,
+            'chart_b64': _generate_chart_base64(top_5pct_summary, 'Top 5%涨幅行业分布'),
         },
     }
