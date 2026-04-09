@@ -16,9 +16,10 @@ All GET analysis endpoints use a 12-hour in-memory cache keyed by date.
 """
 
 import os
-import glob
+import json
+
 import threading
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from django.conf import settings
 from django.core.cache import cache
@@ -134,7 +135,6 @@ def upload(request):
     )
 
 
-
 # ---------------------------------------------------------------------------
 # Save stock industry JSON
 # ---------------------------------------------------------------------------
@@ -152,8 +152,6 @@ def save_stock_industry_json(request):
 
         {"path": "<absolute path>", "bytes": <written bytes>}
     """
-    import json as _json
-
     body = request.data
     if not isinstance(body, (dict, list)):
         return Response(
@@ -162,9 +160,11 @@ def save_stock_industry_json(request):
         )
 
     dest_path = os.path.join(settings.STOCK_DATA_DIR, "stock_industry.json")
+    if os.path.exists(dest_path):
+        os.remove(dest_path)
 
     try:
-        payload = _json.dumps(body, ensure_ascii=False, indent=2)
+        payload = json.dumps(body, ensure_ascii=False, indent=2)
         with open(dest_path, "w", encoding="utf-8") as f:
             f.write(payload)
     except OSError as exc:
