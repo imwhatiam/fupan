@@ -171,7 +171,7 @@ def download_sse_stock_data(date_str=''):
 
     url = (
         "https://yunhq.sse.com.cn:32042/v1/sh1/list/exchange/equity"
-        "?select=code,name,open,last,high,low,chg_rate,amount&begin=0&end=5000"
+        "?select=code,name,prev_close,last,chg_rate,amount&begin=0&end=5000"
     )
     response = requests.get(url, timeout=30)
     resp_json = response.json()
@@ -179,17 +179,17 @@ def download_sse_stock_data(date_str=''):
     raw_list = resp_json.get('list', [])
     stock_list = []
     for stock in raw_list:
-        # 原始字段：code,name,open,last,high,low,chg_rate,amount（8个）
-        if not isinstance(stock, list) or len(stock) < 8:
+        # 原始字段：code,name,prev_close,last,chg_rate,amount（6个）
+        if not isinstance(stock, list) or len(stock) < 6:
             continue
         row = [date_str] + list(stock)   # 插入 date 作为第一列
         try:
-            row[8] = float(row[8])        # amount（索引8，原始索引7）
+            row[6] = float(row[6])        # amount（索引6，原始索引5）
         except (ValueError, TypeError, IndexError):
-            row[8] = 0.0
+            row[6] = 0.0
         stock_list.append(row)
 
-    columns = ['date', 'code', 'name', 'open', 'last', 'high', 'low', 'pctChg', 'amount']
+    columns = ['date', 'code', 'name', 'pre_close', 'close', 'pctChg', 'amount']
     df = pd.DataFrame(stock_list, columns=columns)
     df.to_csv(file_path, index=False)
     return file_path
@@ -259,9 +259,9 @@ def read_szse_stock_data(date_str=''):
         raise FileNotFoundError(f"深证数据文件不存在: {file_path}")
 
     df = pd.read_excel(file_path)
-    df = df[['交易日期', '证券代码', '证券简称', '开盘', '前收',
-             '最高', '最低', '涨跌幅（%）', '成交金额(万元)']].copy()
-    df.columns = ['date', 'code', 'name', 'open', 'last', 'high', 'low', 'pctChg', 'amount']
+    df = df[['交易日期', '证券代码', '证券简称', '前收', '今收',
+             '涨跌幅（%）', '成交金额(万元)']].copy()
+    df.columns = ['date', 'code', 'name', 'pre_close', 'close', 'pctChg', 'amount']
     df['date'] = date_str
     df['code'] = df['code'].astype(str).str.zfill(6)
     df['pctChg'] = pd.to_numeric(df['pctChg'], errors='coerce').fillna(0)

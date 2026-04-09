@@ -102,7 +102,7 @@ CREATE TABLE IF NOT EXISTS stock_trade_info (
     date     TEXT    NOT NULL,
     code     TEXT    NOT NULL,
     name     TEXT    NOT NULL,
-    open     REAL,
+    pro_close     REAL,
     close    REAL,
     pctChg   REAL,
     amount   REAL,
@@ -185,8 +185,8 @@ def save_to_db(date_str: str) -> int:
             str(row["date"]),
             str(row["code"]),
             str(row["name"]),
-            float(row["open"])   if pd.notna(row.get("open"))   else None,
-            float(row["last"])   if pd.notna(row.get("last"))   else None,
+            float(row["pre_close"]) if pd.notna(row.get("pre_close")) else None,
+            float(row["close"]) if pd.notna(row.get("close")) else None,
             float(row["pctChg"]) if pd.notna(row.get("pctChg")) else None,
             float(row["amount"]) if pd.notna(row.get("amount")) else None,
             str(row["industry"]) if pd.notna(row.get("industry")) else "",
@@ -196,7 +196,7 @@ def save_to_db(date_str: str) -> int:
         conn.executemany(
             """
             INSERT OR REPLACE INTO stock_trade_info
-                (date, code, name, open, close, pctChg, amount, industry)
+                (date, code, name, pro_close, close, pctChg, amount, industry)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             rows,
@@ -216,7 +216,7 @@ def get_trade_df(date_str: str) -> pd.DataFrame:
         date_str: Date string in "YYYY-MM-DD" format.
 
     Returns:
-        DataFrame with columns: id, date, code, name, open, close,
+        DataFrame with columns: id, date, code, name, pre_close, close,
         pctChg, amount, industry.
 
     Raises:
