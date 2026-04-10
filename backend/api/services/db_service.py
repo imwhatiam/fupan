@@ -196,7 +196,7 @@ def save_to_db(date_str: str) -> int:
         conn.executemany(
             """
             INSERT OR REPLACE INTO stock_trade_info
-                (date, code, name, pro_close, close, pctChg, amount, industry)
+                (date, code, name, pre_close, close, pctChg, amount, industry)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             rows,
