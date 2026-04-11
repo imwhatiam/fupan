@@ -1,18 +1,56 @@
 # 每日复盘系统
 
-将 A 股每日复盘分析工作流从 Jupyter Notebook 转化为可持续运行的 Web 服务。
-
 ---
 
 ## 功能
 
 - **复盘主表**：展示当日涨跌幅 ≥ 8%、成交额 ≥ 8 亿元的股票，按上证 / 深证 × 涨 / 跌分组，支持一键复制全部股票代码
-- **行业分析**：统计涨幅 > 5% 和全市场涨幅前 10% 股票的行业聚集情况，计算综合评分并生成柱状图
-- **百日新高**：计算每只股票的 100 日最高 / 最低收盘价，按行业聚合展示，并生成近期占比走势图
+- **行业分析**：统计涨幅 > 5% 和全市场涨幅前 5% 股票的行业聚集情况，计算综合评分并生成柱状图
+- **百日新高 / 新低**：计算每只股票相对前 99 个交易日的收盘价极值，按行业聚合展示，并生成近期占比走势图
 - **自动初始化**：页面加载时调用 `/api/init/`，根据当前时间决定展示逻辑：
   - 当日为交易日且当前时间 **≥ 18:00** 但数据库尚无当日数据 → 后台异步下载，前端先展示最近一个交易日
   - 当日为交易日但当前时间 **< 18:00** → 仅提示"数据更新时间"，不触发下载
   - 当日为周末 / 节假日 → 展示最近一个有数据的交易日
+
+---
+
+## 百日新高 / 新低算法说明
+
+### 判断规则
+
+对于目标交易日 D，若某只股票在 D 的收盘价满足以下条件，则触发对应标志：
+
+| 标志 | 条件 |
+|------|------|
+| 百日新高 | `close[D] >= max(close[D-99 : D])` |
+| 百日新低 | `close[D] <= min(close[D-99 : D])` |
+
+滚动窗口使用 `shift(1).rolling(99)`，即当天收盘价不参与窗口计算。
+
+### 缺失数据处理
+
+以下情况会导致某只股票在某些交易日没有收盘价：
+
+| 情况 | 原因 |
+|------|------|
+| 新上市股票 | 上市日之前无历史数据 |
+| 停牌股票 | 停牌期间不产生成交数据 |
+
+**处理策略**：计算滚动窗口之前，对历史缺失值统一填充为 `0`。今日收盘价本身不做填充——若某只股票当天停牌（pivot 中为 `NaN`），则自然被排除在新高 / 新低判断之外。
+
+**示例**：
+
+```
+新上市股票（前 85 天无数据，上市后每天收盘 8 元，今日 20 元）
+  历史窗口 = [0, 0, ..., 0, 8, 8, ..., 8]   ← 0 填充 + 实际数据
+  prev_99_max = max(...) = 8
+  今日 close = 20 > 8  →  触发百日新高 ✓
+
+停牌股票（中间 10 天停牌，正常期收盘 15 元，复牌当天 30 元）
+  历史窗口 = [15, 15, ..., 0, 0, ..., 0, 15, 15, ...]   ← 停牌日填 0
+  prev_99_max = max(...) = 15
+  今日 close = 30 > 15  →  触发百日新高 ✓
+```
 
 ---
 
@@ -46,16 +84,16 @@ fupan-main/
 │   │   ├── urls.py
 │   │   └── wsgi.py
 │   ├── api/
-│   │   ├── views.py            # API 端点（6 个）
+│   │   ├── views.py            # API 端点（7 个）
 │   │   ├── urls.py
-│   │   ├── services/
-│   │   │   ├── data_service.py         # 原始数据下载与读取
-│   │   │   ├── db_service.py           # SQLite 读写层
-│   │   │   ├── analysis_service.py     # 复盘 / 行业分析
-│   │   │   └── hundred_day_service.py  # 百日新高 / 新低分析
-│   │   └── management/
-│   │       └── commands/
-│   │           └── download_stock_data.py  # Django 管理命令（供 crontab 调用）
+│   │   └── services/
+│   │       ├── data_service.py         # 原始数据下载与读取
+│   │       ├── db_service.py           # SQLite 读写层
+│   │       ├── analysis_service.py     # 复盘 / 行业分析
+│   │       └── hundred_day_service.py  # 百日新高 / 新低分析
+│   ├── management/
+│   │   └── commands/
+│   │       └── download_stock_data.py  # Django 管理命令（供 crontab 调用）
 │   ├── stock_data/             # 原始数据文件（运行时自动创建）
 │   ├── stock_trade_info.sqlite3  # 行情数据库（运行时自动创建）
 │   ├── manage.py
@@ -91,15 +129,15 @@ fupan-main/
 
 ```sql
 CREATE TABLE stock_trade_info (
-    id       INTEGER PRIMARY KEY AUTOINCREMENT,
-    date     TEXT    NOT NULL,   -- YYYY-MM-DD
-    code     TEXT    NOT NULL,   -- 6 位股票代码
-    name     TEXT    NOT NULL,
-    open     REAL,
-    close    REAL,               -- 收盘价（SSE 原始字段名为 last，写入时映射为 close）
-    pctChg   REAL,               -- 涨跌幅（%）
-    amount   REAL,               -- 成交额（元）
-    industry TEXT,
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    date      TEXT    NOT NULL,   -- YYYY-MM-DD
+    code      TEXT    NOT NULL,   -- 6 位股票代码
+    name      TEXT    NOT NULL,
+    pro_close REAL,               -- 前收盘价
+    close     REAL,               -- 收盘价（SSE 原始字段名为 last，写入时映射）
+    pctChg    REAL,               -- 涨跌幅（%）
+    amount    REAL,               -- 成交额（元）
+    industry  TEXT,
     UNIQUE(date, code)
 )
 ```
@@ -121,6 +159,27 @@ Base URL：`http://localhost:8000/api`
 | `GET` | `/api/hundred-day/?date=YYYY-MM-DD` | 百日新高 / 新低 |
 | `GET` | `/api/dates/` | 数据库中可用的交易日列表 |
 | `GET` | `/api/health/` | 健康检查 |
+| `POST` | `/api/upload/` | 上传沪深京A股行业分类 CSV |
+
+### `/api/hundred-day/` 响应格式
+
+```json
+{
+  "date": "2026-04-10",
+  "total_stocks": 5320,
+  "high_count": 48,
+  "low_count": 12,
+  "new_high_sectors": [
+    {
+      "industry": "银行",
+      "count": 8,
+      "stocks": ["平安银行", "招商银行", "..."]
+    }
+  ],
+  "new_low_sectors": [...],
+  "ratio_chart_b64": "<base64 PNG>"
+}
+```
 
 ### `/api/init/` 决策逻辑
 
@@ -161,6 +220,29 @@ npm run dev        # http://localhost:3000，/api 自动代理到 :8000
 ```
 
 > Node.js 要求 **≥ 20.19** 或 **≥ 22.12**（Vite 7 最低要求）。
+
+### 运行测试
+
+测试套件无需 Django 环境，直接用 Python 执行：
+
+```bash
+# 在项目根目录
+python test_hundred_day.py
+```
+
+测试覆盖范围：
+
+| 分组 | 用例 | 验证内容 |
+|------|------|----------|
+| Unit | U1–U4 | `_compute_high_low_flags`：正常数据、新上市、停牌、目标日停牌 |
+| Unit | U5–U7 | `_build_sector_table`：正常聚合、行业缺失跳过、日期不存在 |
+| Integration | I1 | 完整 115 天数据的高/低计数、行业归属、图表格式 |
+| Integration | I2 | 新上市股（仅最近 30 天）被正确识别为新高 |
+| Integration | I3 | 停牌股（中间缺失 10 天）复牌后被正确识别 |
+| Integration | I4 | 目标日本身停牌不计入任何统计 |
+| Integration | I5 | 数据不足 100 天时返回占位图 |
+| Integration | I6–I7 | 不存在日期、空数据库抛出 FileNotFoundError |
+| Integration | I8 | 比率走势图最后一柱数值大于 0 |
 
 ### 手动下载数据
 
@@ -244,8 +326,6 @@ sudo chown ubuntu:ubuntu /var/log/fupan
 ```
 
 ### 7. Supervisor 配置（管理 Gunicorn 进程）
-
-创建配置文件：
 
 ```bash
 sudo nano /etc/supervisor/conf.d/fupan.conf
@@ -356,7 +436,7 @@ crontab -e
 chmod +x /srv/fupan-system/scripts/cron_download.sh
 ```
 
-> **注意**：`cron_download.sh` 内目前硬编码了开发时路径（`/root/.python-3.12-venv/` 和 `/root/fupan/`），部署前需按实际路径修改，例如：
+> **注意**：`cron_download.sh` 内目前硬编码了开发时路径，部署前需按实际路径修改：
 > ```bash
 > /srv/fupan-system/venv/bin/python /srv/fupan-system/backend/manage.py download_stock_data
 > ```
@@ -402,7 +482,8 @@ sudo supervisorctl restart fupan
 
 ## 历史数据导入
 
-`fupan-utils/` 目录保留了项目迁移到 Web 服务之前的 Jupyter Notebook 工具，可用于批量导入历史数据到 SQLite：
+`fupan-utils/` 目录保留了项目迁移到 Web 服务之前的 Jupyter Notebook 工具，
+可用于批量导入历史数据到 SQLite：
 
 ```bash
 cd fupan-utils
