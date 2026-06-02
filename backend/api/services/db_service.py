@@ -185,8 +185,8 @@ def save_to_db(date_str: str) -> int:
             str(row["date"]),
             str(row["code"]),
             str(row["name"]),
-            float(str(row["pre_close"]).replace(",", "")) if pd.notna(row.get("pre_close")) else None
-            float(str(row["close"]).replace(",", "")) if pd.notna(row.get("close")) else None
+            float(str(row["pre_close"]).replace(",", "")) if pd.notna(row.get("pre_close")) else None,
+            float(str(row["close"]).replace(",", "")) if pd.notna(row.get("close")) else None,
             float(row["pctChg"]) if pd.notna(row.get("pctChg")) else None,
             float(row["amount"]) if pd.notna(row.get("amount")) else None,
             str(row["industry"]) if pd.notna(row.get("industry")) else "",
