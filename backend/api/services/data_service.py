@@ -138,6 +138,7 @@ INDUSTRY_NAME_DICT = {
 # ──────────────────────────────────────────────
 
 def download_stock_industry_data(date_str=''):
+    return None
     file_path = get_stock_industry_data_path(date_str)
     if os.path.exists(file_path):
         return file_path
