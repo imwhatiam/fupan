@@ -97,9 +97,9 @@ def upload(request):
     response with an ``error`` key.
 
     Special case – ``沪深京A股.csv``:
-        When this filename is uploaded it replaces the baostock-sourced
-        industry classification used by ``save_to_db()``.  All analysis
-        cache entries are cleared so the next query picks up the new data.
+        When this filename is uploaded it replaces the industry
+        classification used by ``save_to_db()``. All analysis cache
+        entries are cleared so the next query picks up the new data.
     """
     file_obj = request.FILES.get("file")
     if not file_obj:

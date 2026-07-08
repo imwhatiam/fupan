@@ -200,6 +200,13 @@ Base URL：`http://localhost:8000/api`
 
 ## 本地开发
 
+想在前端页面真正看到数据，顺序必须是：启动后端 -> 启动前端 -> 确认数据库里已有交易日数据。
+
+注意两个容易误判的问题：
+
+- 前端能打开 `http://localhost:3000` 不代表有行情数据；页面数据来自 `backend/stock_trade_info.sqlite3`
+- 当天 **18:00 之前**，请求当天的 `/api/fupan/`、`/api/industry/`、`/api/hundred-day/` 会返回 `404` 和提示文案，这是当前后端设计，不是服务异常
+
 ### 后端
 
 ```bash
@@ -209,6 +216,18 @@ source ../venv/bin/activate
 pip install -r requirements.txt
 
 python manage.py runserver 0.0.0.0:8000
+```
+
+启动后先做健康检查：
+
+```bash
+curl http://127.0.0.1:8000/api/health/
+```
+
+正常返回：
+
+```json
+{"status":"ok"}
 ```
 
 ### 前端
@@ -221,28 +240,107 @@ npm run dev        # http://localhost:3000，/api 自动代理到 :8000
 
 > Node.js 要求 **≥ 20.19** 或 **≥ 22.12**（Vite 7 最低要求）。
 
-### 运行测试
+前端启动后访问：`http://localhost:3000`
 
-测试套件无需 Django 环境，直接用 Python 执行：
+Vite 已配置 `/api` 代理到 `http://localhost:8000`，因此本地开发时不需要手动改前端 API 地址。
+
+### 前端页面显示数据的前提
+
+先检查后端数据库里是否已经有可用交易日：
 
 ```bash
-# 在项目根目录
-python test_hundred_day.py
+curl http://127.0.0.1:8000/api/dates/
 ```
 
-测试覆盖范围：
+如果返回空数组 `[]`，说明前端暂时没有任何可展示的数据，需要先导入数据。
 
-| 分组 | 用例 | 验证内容 |
-|------|------|----------|
-| Unit | U1–U4 | `_compute_high_low_flags`：正常数据、新上市、停牌、目标日停牌 |
-| Unit | U5–U7 | `_build_sector_table`：正常聚合、行业缺失跳过、日期不存在 |
-| Integration | I1 | 完整 115 天数据的高/低计数、行业归属、图表格式 |
-| Integration | I2 | 新上市股（仅最近 30 天）被正确识别为新高 |
-| Integration | I3 | 停牌股（中间缺失 10 天）复牌后被正确识别 |
-| Integration | I4 | 目标日本身停牌不计入任何统计 |
-| Integration | I5 | 数据不足 100 天时返回占位图 |
-| Integration | I6–I7 | 不存在日期、空数据库抛出 FileNotFoundError |
-| Integration | I8 | 比率走势图最后一柱数值大于 0 |
+### 导入一份可展示的数据
+
+在后端虚拟环境中执行：
+
+```bash
+cd backend
+source ../venv/bin/activate
+python manage.py download_stock_data --date 2026-07-02
+```
+
+请将日期替换为实际交易日。
+
+导入完成后，可以直接验证某一天是否有复盘数据：
+
+```bash
+curl "http://127.0.0.1:8000/api/fupan/?date=2026-07-02"
+```
+
+### 行业数据的重要限制
+
+当前代码里，`backend/api/services/data_service.py` 的 `download_stock_industry_data()` 开头直接 `return None`，所以行业映射文件**不会自动下载**。
+
+这意味着成功导入完整数据依赖以下二选一：
+
+- `backend/stock_data/` 下已经存在 `stock_industry_YYYY-MM-DD.csv`
+- 手动上传 `backend/stock_data/沪深京A股.csv`
+
+推荐使用第二种方式，因为更稳定。
+
+### 上传 `沪深京A股.csv`
+
+后端运行后，可以通过上传接口写入行业映射文件：
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/upload/ \
+  -F "file=@/你的文件路径/沪深京A股.csv"
+```
+
+上传成功后，建议重新执行一次下载导入：
+
+```bash
+cd backend
+source ../venv/bin/activate
+python manage.py download_stock_data --date 2026-07-02
+```
+
+### 页面访问流程
+
+完成以上步骤后：
+
+1. 打开 `http://localhost:3000`
+2. 页面会先调用 `POST /api/init/`
+3. 再根据返回的日期加载复盘、行业分析和百日新高数据
+
+如果当天未到 18:00，页面可能只提示当天数据未更新。这时请在日期选择器里切换到 `/api/dates/` 返回的历史日期。
+
+### 运行测试
+
+README 曾提到可直接运行 `python test_hundred_day.py`，但当前仓库中**没有这个文件**。
+
+目前仓库里没有已提交的自动化测试入口；建议使用下面两个命令做基础验证：
+
+```bash
+cd backend && python manage.py check
+cd frontend && npm run build
+```
+
+### 常用排查命令
+
+```bash
+# 后端是否正常
+curl http://127.0.0.1:8000/api/health/
+
+# 当前有哪些可选日期
+curl http://127.0.0.1:8000/api/dates/
+
+# 检查某日复盘数据
+curl "http://127.0.0.1:8000/api/fupan/?date=2026-07-02"
+
+# 检查某日行业分析
+curl "http://127.0.0.1:8000/api/industry/?date=2026-07-02"
+
+# 检查某日百日新高/新低
+curl "http://127.0.0.1:8000/api/hundred-day/?date=2026-07-02"
+```
+
+如果 `fupan` 能返回数据但 `industry` 失败，优先检查是否缺少行业映射文件。
 
 ### 手动下载数据
 

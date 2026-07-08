@@ -5,18 +5,16 @@ SQLite data-access layer for the daily market review system.
 
 Responsibilities:
   - Define and initialise the ``stock_trade_info`` table.
-  - Merge downloaded raw files (SSE CSV, SZSE XLSX, industry CSV) and persist
+  - Merge downloaded raw files (SSE CSV, SZSE XLSX, uploaded industry CSV) and persist
     them to the database via ``save_to_db()``.
   - Provide query helpers used by the analysis services.
 
 Database file path is configured via ``settings.TRADE_DB_PATH``.
 
-Industry data source priority (checked in save_to_db):
+Industry data source:
   1. 沪深京A股.csv  – uploaded manually to STOCK_DATA_DIR; columns "代码" and
-     "所属行业" are used.  Stock codes in this file are prefixed with a leading
+     "所属行业" are used. Stock codes in this file are prefixed with a leading
      apostrophe (e.g. ``'301683``); only the last six digits are kept.
-  2. baostock CSV   – downloaded automatically via data_service when the
-     上-file is absent.
 """
 
 import os
@@ -26,10 +24,8 @@ import pandas as pd
 from django.conf import settings
 
 from .data_service import (
-    read_stock_industry_data,
     read_sse_stock_data,
     read_szse_stock_data,
-    download_stock_industry_data,
     download_sse_stock_data,
     download_szse_stock_data,
 )
@@ -49,47 +45,46 @@ _HUSHEN_CSV = "沪深京A股.csv"
 def _get_industry_df(date_str: str) -> pd.DataFrame:
     """Return a DataFrame with columns [code, industry] for merging.
 
-    Checks for a manually uploaded ``沪深京A股.csv`` in STOCK_DATA_DIR first.
+    Checks for a manually uploaded ``沪深京A股.csv`` in STOCK_DATA_DIR.
     If found, extracts the "代码" and "所属行业" columns and normalises the
     code values (strips the leading apostrophe and keeps the last 6 digits).
 
-    Falls back to the baostock-sourced industry CSV when the file is absent.
-
     Args:
-        date_str: Trading date string; passed to the baostock fallback path.
+        date_str: Trading date string, used only for error reporting.
 
     Returns:
         DataFrame with exactly two columns: ``code`` (str) and ``industry`` (str).
     """
     hushen_path = os.path.join(settings.STOCK_DATA_DIR, _HUSHEN_CSV)
 
-    if os.path.exists(hushen_path):
-        # Excel 另存的 CSV 常见 UTF-16 LE（BOM = 0xff 0xfe）或 GBK 编码，
-        # 依次尝试：utf-16、gbk、utf-8，均失败则抛出明确错误。
-        for enc in ("utf-16", "gbk", "utf-8"):
-            try:
-                df = pd.read_csv(hushen_path, sep='\t', dtype=str, encoding=enc)
-                break
-            except (UnicodeDecodeError, Exception):
-                continue
-        else:
-            raise ValueError(
-                f"无法解析 {_HUSHEN_CSV} 的编码，请另存为 UTF-8 格式后重新上传"
-            )
-
-        # Normalise code: values look like "'301683" – keep the last 6 digits.
-        df["code"] = (
-            df["代码"]
-            .str.strip()
-            .str.replace("'", "", regex=False)   # strip leading apostrophe
-            .str[-6:]                              # keep last 6 digits
-            .str.zfill(6)                          # zero-pad just in case
+    if not os.path.exists(hushen_path):
+        raise FileNotFoundError(
+            f"行业映射文件不存在: {hushen_path}。请先上传 {_HUSHEN_CSV} 后再导入 {date_str} 的数据"
         )
-        df["industry"] = df["所属行业"].str.strip()
-        return df[["code", "industry"]].copy()
 
-    # Fallback: baostock-sourced CSV (downloaded automatically).
-    return read_stock_industry_data(date_str)
+    # Excel 另存的 CSV 常见 UTF-16 LE（BOM = 0xff 0xfe）或 GBK 编码，
+    # 依次尝试：utf-16、gbk、utf-8，均失败则抛出明确错误。
+    for enc in ("utf-16", "gbk", "utf-8"):
+        try:
+            df = pd.read_csv(hushen_path, sep='\t', dtype=str, encoding=enc)
+            break
+        except (UnicodeDecodeError, Exception):
+            continue
+    else:
+        raise ValueError(
+            f"无法解析 {_HUSHEN_CSV} 的编码，请另存为 UTF-8 格式后重新上传"
+        )
+
+    # Normalise code: values look like "'301683" – keep the last 6 digits.
+    df["code"] = (
+        df["代码"]
+        .str.strip()
+        .str.replace("'", "", regex=False)   # strip leading apostrophe
+        .str[-6:]                              # keep last 6 digits
+        .str.zfill(6)                          # zero-pad just in case
+    )
+    df["industry"] = df["所属行业"].str.strip()
+    return df[["code", "industry"]].copy()
 
 
 # ---------------------------------------------------------------------------
@@ -146,11 +141,10 @@ def save_to_db(date_str: str) -> int:
     """Download raw files for *date_str* and persist them to SQLite.
 
     Steps:
-      1. Download industry CSV, SSE CSV, and SZSE XLSX (skips if cached).
-      2. Read each file into a DataFrame and join on ``code``.
+      1. Download SSE CSV and SZSE XLSX (skips if cached).
+      2. Read each file plus the uploaded industry CSV into DataFrames and join on ``code``.
       3. Concatenate SSE and SZSE frames.
       4. Upsert all rows into ``stock_trade_info`` via INSERT OR REPLACE.
-      5. Clear the in-memory cache for this date.
 
     Args:
         date_str: Trading date string in "YYYY-MM-DD" format.
@@ -161,13 +155,10 @@ def save_to_db(date_str: str) -> int:
     init_db()
 
     # Download raw files (idempotent – skips if local files already exist).
-    download_stock_industry_data(date_str)
     download_sse_stock_data(date_str)
     download_szse_stock_data(date_str)
 
-    # Read and merge industry classification.
-    # Prefers 沪深京A股.csv if present in STOCK_DATA_DIR; otherwise falls
-    # back to the baostock-sourced CSV (downloaded above).
+    # Read and merge industry classification from the uploaded file.
     industry_df = _get_industry_df(date_str)
     sse_df = read_sse_stock_data(date_str).merge(
         industry_df, on="code", how="left"

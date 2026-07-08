@@ -7,7 +7,6 @@ pandas
 numpy
 openpyxl
 
-baostock
 requests
 
 chinese-calendar
